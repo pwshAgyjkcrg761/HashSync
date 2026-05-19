@@ -1,6 +1,6 @@
 # ==============================================================================
 # SCRIPT: HashSync.ps1
-# VERSION: 2026.05.19_08.04.00
+# VERSION: 2026.05.19_15.19.16
 # TARGET: PowerShell 7.6.1 LTS
 #
 # Copyright (C) 2026 pwshAgyjkcrg761
@@ -55,7 +55,7 @@ param (
 )
 
 # --- GLOBAL VERSION DEFINITION ---
-$scriptVersion = "2026.05.19_08.04.00"
+$scriptVersion = "2026.05.19_15.19.16"
 
 # --- VERSION REPORTER ---
 if ($Version) {
