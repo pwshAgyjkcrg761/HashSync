@@ -1,6 +1,6 @@
 # ==============================================================================
 # SCRIPT: HashSync.ps1
-# VERSION: 2026.05.19_15.19.16
+# VERSION: 2026.05.19_19.48.00
 # TARGET: PowerShell 7.6.1 LTS
 #
 # Copyright (C) 2026 pwshAgyjkcrg761
@@ -55,7 +55,7 @@ param (
 )
 
 # --- GLOBAL VERSION DEFINITION ---
-$scriptVersion = "2026.05.19_15.19.16"
+$scriptVersion = "2026.05.19_19.48.00"
 
 # --- VERSION REPORTER ---
 if ($Version) {
@@ -129,7 +129,6 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "HashSync_configuration.json"
 $Config = @{
     SetNASRootPath = ""
-    LastBackUpPath = ""
 }
 
 if (Test-Path -LiteralPath $ConfigFile) {
@@ -147,12 +146,16 @@ if (Test-Path -LiteralPath $ConfigFile) {
 if ($PSBoundParameters.ContainsKey('SetNASRootPath')) {
     $Config['SetNASRootPath'] = $SetNASRootPath[0]
 }
-if ($PSBoundParameters.ContainsKey('BackUpPath') -and $BackUpPath.Count -gt 0) {
-    $Config['LastBackUpPath'] = $BackUpPath[0]
-}
 
 # Save updated operational states immediately back to configuration store
 $Config | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $ConfigFile -Encoding utf8
+
+# If the user is only setting the NAS path, exit after saving
+if ($PSBoundParameters.ContainsKey('SetNASRootPath') -and -not $PSBoundParameters.ContainsKey('BackUpPath')) {
+    Write-Host "Configuration Updated." -ForegroundColor DarkGreen
+    Write-Host "NAS Root set to: $($Config['SetNASRootPath'])" -ForegroundColor Gray
+    exit
+}
 
 # Ensure requiDarkRed deployment configurations exist before continuing
 if ([string]::IsNullOrWhiteSpace($Config['SetNASRootPath'])) {
@@ -167,16 +170,14 @@ $NasRoot = $Config['SetNASRootPath']
 # 2. Establish Execution and Destination Targets
 if ($PSBoundParameters.ContainsKey('BackUpPath') -and $BackUpPath.Count -gt 0) {
     $DestinationPath = [System.IO.Path]::GetFullPath($BackUpPath[0])
-} elseif (-not [string]::IsNullOrWhiteSpace($Config['LastBackUpPath'])) {
-    $DestinationPath = [System.IO.Path]::GetFullPath($Config['LastBackUpPath'])
 } else {
     $RawPath = if ($args[0]) { $args[0] } else { $PWD.Path }
     $DestinationPath = [System.IO.Path]::GetFullPath($RawPath)
 }
 
-# Update state storage tracking cache with verified destination coordinates
-$Config['LastBackUpPath'] = $DestinationPath
-$Config | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $ConfigFile -Encoding utf8
+# # Update state storage tracking cache with verified destination coordinates
+# $Config['LastBackUpPath'] = $DestinationPath
+# $Config | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $ConfigFile -Encoding utf8
 
 
 
@@ -188,11 +189,23 @@ if ($DestinationPath.StartsWith($NasRoot, [System.StringComparison]::OrdinalIgno
 }
 
 # 4. STRUCTURAL RECONCILIATION & RESOLUTION
-# Safely find relative sub-tree offsets based on configuDarkRed root parameters
-if ($DestinationPath.Length -ge $NasRoot.Length -and $DestinationPath.Substring(0, $NasRoot.Length) -eq $NasRoot) {
-    $SourcePath = $DestinationPath
+# Identify the root folder name (e.g., "anime アニメ japanese 日本語")
+$NasFolderName = Split-Path -Path $NasRoot -Leaf
+
+# Determine where the root name starts in the destination string to find the relative path
+$RootIndex = $DestinationPath.IndexOf($NasFolderName, [System.StringComparison]::OrdinalIgnoreCase)
+
+if ($RootIndex -ge 0) {
+    # Extract the portion of the path AFTER the root folder name
+    $RelativePath = $DestinationPath.Substring($RootIndex + $NasFolderName.Length).TrimStart('\').TrimStart('/')
+    
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        $SourcePath = $NasRoot
+    } else {
+        $SourcePath = Join-Path -Path $NasRoot -ChildPath $RelativePath
+    }
 } else {
-    # If working within a nested mirror tree, synchronize exactly or assume flat root mapping
+    # Fallback: If path structures differ wildly, default to the NAS Root
     $SourcePath = $NasRoot
 }
 
