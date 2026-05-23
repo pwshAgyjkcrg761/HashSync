@@ -1,6 +1,6 @@
 # ==============================================================================
 # SCRIPT: HashSync.ps1
-# VERSION: 2026.05.19_19.48.00
+# VERSION: 2026.05.23_10.20.15
 # TARGET: PowerShell 7.6.1 LTS
 #
 # Copyright (C) 2026 pwshAgyjkcrg761
@@ -55,7 +55,7 @@ param (
 )
 
 # --- GLOBAL VERSION DEFINITION ---
-$scriptVersion = "2026.05.19_19.48.00"
+$scriptVersion = "2026.05.23_10.20.15"
 
 # --- VERSION REPORTER ---
 if ($Version) {
@@ -167,152 +167,140 @@ if ([string]::IsNullOrWhiteSpace($Config['SetNASRootPath'])) {
 
 $NasRoot = $Config['SetNASRootPath']
 
-# 2. Establish Execution and Destination Targets
+# 2. Establish Execution and Destination Targets (Supports Multiple Folders)
+$TargetPaths = @()
 if ($PSBoundParameters.ContainsKey('BackUpPath') -and $BackUpPath.Count -gt 0) {
-    $DestinationPath = [System.IO.Path]::GetFullPath($BackUpPath[0])
+    foreach ($Path in $BackUpPath) { $TargetPaths += [System.IO.Path]::GetFullPath($Path) }
+} elseif ($args.Count -gt 0) {
+    foreach ($Path in $args) { $TargetPaths += [System.IO.Path]::GetFullPath($Path) }
 } else {
-    $RawPath = if ($args[0]) { $args[0] } else { $PWD.Path }
-    $DestinationPath = [System.IO.Path]::GetFullPath($RawPath)
+    $TargetPaths += [System.IO.Path]::GetFullPath($PWD.Path)
 }
 
-# # Update state storage tracking cache with verified destination coordinates
-# $Config['LastBackUpPath'] = $DestinationPath
-# $Config | ConvertTo-Json -Depth 5 | Out-File -LiteralPath $ConfigFile -Encoding utf8
 
-
-
-# 3. SAFETY CHECK: Prevent processing on absolute source
-if ($DestinationPath.StartsWith($NasRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    Write-Host "ERROR: Execution blocked. Target directory cannot reside inside the source NAS path." -ForegroundColor DarkRed
-    Read-Host "Press Enter to exit"
-    exit
-}
-
-# 4. STRUCTURAL RECONCILIATION & RESOLUTION
-# Identify the root folder name (e.g., "anime アニメ japanese 日本語")
+# 3. ANALYSIS PHASE (Pre-check all folders)
+$Results = @()
 $NasFolderName = Split-Path -Path $NasRoot -Leaf
 
-# Determine where the root name starts in the destination string to find the relative path
-$RootIndex = $DestinationPath.IndexOf($NasFolderName, [System.StringComparison]::OrdinalIgnoreCase)
-
-if ($RootIndex -ge 0) {
-    # Extract the portion of the path AFTER the root folder name
-    $RelativePath = $DestinationPath.Substring($RootIndex + $NasFolderName.Length).TrimStart('\').TrimStart('/')
-    
-    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
-        $SourcePath = $NasRoot
-    } else {
-        $SourcePath = Join-Path -Path $NasRoot -ChildPath $RelativePath
+foreach ($DestPath in $TargetPaths) {
+    $Entry = [PSCustomObject]@{
+        Destination = $DestPath
+        Source      = ""
+        Match       = "NO"
+        Error       = ""
+        Diff        = $null
     }
-} else {
-    # Fallback: If path structures differ wildly, default to the NAS Root
-    $SourcePath = $NasRoot
+
+    # Path Mapping
+    $RootIndex = $DestPath.IndexOf($NasFolderName, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($RootIndex -ge 0) {
+        $RelativePath = $DestPath.Substring($RootIndex + $NasFolderName.Length).TrimStart('\').TrimStart('/')
+        $Entry.Source = if ([string]::IsNullOrWhiteSpace($RelativePath)) { $NasRoot } else { Join-Path -Path $NasRoot -ChildPath $RelativePath }
+    } else { $Entry.Source = $NasRoot }
+
+    # Validation
+    if ($DestPath.StartsWith($NasRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $Entry.Error = "Target inside Source"
+    } elseif (-not (Test-Path -LiteralPath $Entry.Source)) {
+        $Entry.Error = "NAS Path Missing"
+    } else {
+        # Structural Check
+        $DestFolders = @(Get-ChildItem -LiteralPath $DestPath -Recurse -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Substring($DestPath.Length) } | Sort-Object)
+        $SourceFolders = @(Get-ChildItem -LiteralPath $Entry.Source -Recurse -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Substring($Entry.Source.Length) } | Sort-Object)
+        
+        $Diff = $null
+        if ($SourceFolders.Count -gt 0 -or $DestFolders.Count -gt 0) {
+            $Diff = Compare-Object -ReferenceObject $SourceFolders -DifferenceObject $DestFolders
+        }
+        
+        if ($null -eq $Diff) { 
+            $Entry.Match = "YES" 
+        } else { 
+            $Entry.Diff = $Diff 
+        }
+    }
+    $Results += $Entry
 }
-
-# 5. Path Validation
-if (-not (Test-Path -LiteralPath $SourcePath)) {
-    Write-Warning "Source path location inaccessible or missing on target NAS: $SourcePath"
-    Read-Host "Press Enter to exit"
-    exit
-}
-
-# 6. STRICT IDENTITY CHECK
-Write-Host "Comparing Backup structure to NAS..." -ForegroundColor DarkCyan
-
-$DestFolders = @(Get-ChildItem -LiteralPath $DestinationPath -Recurse -Directory -ErrorAction SilentlyContinue | 
-               ForEach-Object { $_.FullName.Substring($DestinationPath.Length) } | Sort-Object)
-
-$SourceFolders = @(Get-ChildItem -LiteralPath $SourcePath -Recurse -Directory | 
-                 ForEach-Object { $_.FullName.Substring($SourcePath.Length) } | Sort-Object)
-
-$Diff = $null
-if ($SourceFolders.Count -gt 0 -or $DestFolders.Count -gt 0) {
-    $Diff = Compare-Object -ReferenceObject $SourceFolders -DifferenceObject $DestFolders
-}
-
-$StructureMatch = if ($null -eq $Diff) { "YES" } else { "NO" }
 
 # --- STARTUP DISPLAY ---
 Clear-Host
-$uiversion = $scriptVersion
-# $displayMode = "Hash Sync Processing Mode"
+Write-Host "==================================================" -ForegroundColor DarkYellow
+Write-Host "        HashSync.ps1 v$scriptVersion" -ForegroundColor Blue
+Write-Host "==================================================" -ForegroundColor DarkYellow
+Write-Host "NAS Root: " -NoNewline; Write-Host $NasRoot -ForegroundColor DarkMagenta
+Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
 
-Write-Host "==================================================" -ForegroundColor DarkYellow
-Write-Host "        HashSync.ps1 v$uiversion" -ForegroundColor Blue
-Write-Host "==================================================" -ForegroundColor DarkYellow
-# Write-Host $displayMode
-# Write-Host "--------------------------------------------------"
-Write-Host "Config File: " -NoNewline; Write-Host (Split-Path -Path $ConfigFile -Leaf) -ForegroundColor DarkGray
-Write-Host "Config Path: " -NoNewline; Write-Host $ConfigFile -ForegroundColor DarkGray
-Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
-Write-Host "Loaded Configuration:" -ForegroundColor DarkGreen
-Write-Host "  NAS Root Source:  " -NoNewline -ForegroundColor Blue ; Write-Host $NasRoot -ForegroundColor DarkMagenta
-Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
-Write-Host "Destination Folder(s):" -ForegroundColor DarkGreen
-Write-Host "  -> $DestinationPath" -ForegroundColor DarkMagenta
-Write-Host ""
-# Write-Host "Script Location:    " -NoNewline; Write-Host "$PSScriptRoot"
-Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
-Write-Host "Structure Match:    " -NoNewline -ForegroundColor DarkGreen
-if ($StructureMatch -eq "YES") {
-    Write-Host "YES" -ForegroundColor DarkGreen
-} else {
-    Write-Host "NO" -ForegroundColor DarkRed
+foreach ($R in $Results) {
+    $Color = if ($R.Match -eq "YES") { "DarkGreen" } else { "DarkRed" }
+    Write-Host "Hash Destination(s):" -ForegroundColor Gray
+    Write-Host "" -NoNewLine; Write-Host "  -> $($R.Destination)" -ForegroundColor DarkCyan
+    # Write-Host "Hash Destination: $($R.Destination)" -ForegroundColor DarkBlue
+    Write-Host "Match:  " -NoNewline; Write-Host $R.Match -ForegroundColor $Color
+    if ($R.Error) { Write-Host "Error:  $($R.Error)" -ForegroundColor DarkRed }
+    Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
 }
-Write-Host "--------------------------------------------------" -ForegroundColor DarkYellow
-Write-Host ""
 
-if ($StructureMatch -eq "NO") {
-    Write-Host "ERROR: Folder structures are NOT identical." -ForegroundColor DarkRed
-    $Diff | ForEach-Object {
-        $Side = if ($_.SideIndicator -eq "<=") { "Missing on Backup" } else { "Extra on Backup" }
-        Write-Host " - $($Side): $($_.InputObject)" -ForegroundColor DarkYellow
+# Detailed Errors for Mismatches
+$Mismatches = $Results | Where-Object { $_.Match -eq "NO" -and -not $_.Error }
+if ($Mismatches) {
+    Write-Host "`nSTRUCTURE MISMATCH DETAILS:" -ForegroundColor DarkRed
+    foreach ($M in $Mismatches) {
+        Write-Host " Folder: $($M.Destination)" -ForegroundColor DarkYellow
+        $M.Diff | ForEach-Object {
+            $Side = if ($_.SideIndicator -eq "<=") { "Missing on Backup" } else { "Extra on Backup" }
+            Write-Host "  - $($Side): $($_.InputObject)" -ForegroundColor DarkGray
+        }
     }
-    Read-Host "Sync aborted. Press Enter to exit"
+    Write-Host "--------------------------------------------------`n" -ForegroundColor DarkYellow
+}
+
+
+
+# 7. USER CONFIRMATION
+$ValidTargets = $Results | Where-Object { $_.Match -eq "YES" }
+
+if ($ValidTargets.Count -eq 0) {
+    Write-Host "No folders are eligible for sync. Check mismatches above." -ForegroundColor DarkRed
+    Read-Host "Press Enter to exit"
     exit
 }
 
-
-
-# 7. USER CONFIRMATION (GUI Prompt)
-# $Title = "Hash Sync v$scriptVersion"
-$Message = "Copy .hash files from NAS Root Source to this Destination?" 
+$Message = "HashSync $($ValidTargets.Count) matching folder(s)?"
 $Yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Starts the copy."
 $No = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Aborts."
 $Options = [System.Management.Automation.Host.ChoiceDescription[]]($Yes, $No)
 
-if ($host.ui.PromptForChoice($Title, $Message, $Options, 1) -ne 0) {
+if ($host.ui.PromptForChoice("", $Message, $Options, 1) -ne 0) {
     Write-Host "Operation cancelled." -ForegroundColor DarkYellow
     exit
 }
 
-# 8. Recursive Copy (.hash files ONLY)
-$HashFiles = Get-ChildItem -LiteralPath $SourcePath -Filter "*.hash" -Recurse -File
+# 8. EXECUTION PHASE (Copy only matched folders)
+foreach ($Target in $ValidTargets) {
+    Write-Host "`nHashSyncing: $($Target.Destination)" -ForegroundColor DarkCyan
+    $HashFiles = Get-ChildItem -LiteralPath $Target.Source -Filter "*.hash" -Recurse -File
 
-if ($HashFiles.Count -eq 0) {
-    Write-Host "No .hash files found on NAS." -ForegroundColor DarkYellow
-} else {
-    Write-Host "HashSynching..." -ForegroundColor DarkCyan
-    foreach ($File in $HashFiles) {
-        $FileRelPath = $File.FullName.Substring($SourcePath.Length)
-        $TargetPath = Join-Path -Path $DestinationPath -ChildPath $FileRelPath
-        
-        # Ensure subdirectories exist at target
-        $TargetDir = Split-Path -Path $TargetPath -Parent
-        if (-not (Test-Path -LiteralPath $TargetDir)) {
-            New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
-        }
+    if ($HashFiles.Count -eq 0) {
+        Write-Host " No .hash files found on NAS." -ForegroundColor DarkYellow
+    } else {
+        foreach ($File in $HashFiles) {
+            $FileRelPath = $File.FullName.Substring($Target.Source.Length)
+            $TargetPath = Join-Path -Path $Target.Destination -ChildPath $FileRelPath
+            
+            $TargetDir = Split-Path -Path $TargetPath -Parent
+            if (-not (Test-Path -LiteralPath $TargetDir)) {
+                New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
+            }
 
-        try {
-            Copy-Item -LiteralPath $File.FullName -Destination $TargetPath -Force -ErrorAction Stop
-            Write-Host "Updated: $FileRelPath" -ForegroundColor Gray
-        }
-        catch {
-            Write-Warning "Failed to copy: $($File.Name)"
+            try {
+                Copy-Item -LiteralPath $File.FullName -Destination $TargetPath -Force -ErrorAction Stop
+                Write-Host " Updated: $FileRelPath" -ForegroundColor Gray
+            }
+            catch { Write-Warning " Failed to copy: $($File.Name)" }
         }
     }
-    Write-Host "HashSync complete." -ForegroundColor DarkGreen
 }
 
-Write-Host ""
-Read-Host "Task finished. Press Enter to close"
+Write-Host "`nAll tasks finished." -ForegroundColor DarkGreen
+Read-Host "Press Enter to close"
+exit
