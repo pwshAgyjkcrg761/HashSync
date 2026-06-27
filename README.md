@@ -43,7 +43,7 @@ The script operates with a dual-stage execution model—combining configuration 
 * **State Caching**: The application automatically tracks and handles historical execution coordinates to optimize sequential operations across runtime tasks.
 
 ## Dependencies
-* **PowerShell 7.6.1 LTS**: Built and optimized for modern LTS shell features.
+* **PowerShell 7.6.x LTS**: Built and optimized for modern LTS shell features.
 * **Windows File Systems**: Fully sanitizes path tracking formats to ensure reliable local handling.
 
 ## Support & Maintenance
