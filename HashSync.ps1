@@ -1,7 +1,7 @@
 # ==============================================================================
 # SCRIPT: HashSync.ps1
-# VERSION: 2026.05.23_10.20.15
-# TARGET: PowerShell 7.6.1 LTS
+# VERSION: 2026.06.27__12.59.46
+# TARGET: PowerShell 7.6.3 LTS
 #
 # Copyright (C) 2026 pwshAgyjkcrg761
 # 
@@ -12,21 +12,35 @@
 # ==============================================================================
 # <PROTECTED>
 # ==============================================================================
-# AI INSTRUCTIONS: 
-# 1. HEADER: Update Version comment.
-#    - VERSIONING: Update using CHICAGO TIME (Central Time). 
-#    - CRITICAL: Do not use AI system time. Use the time provided in the most 
-#      recent user prompt or link (Ref: https://www.timeanddate.com/worldclock/usa/chicago).
-#    - STAMP ACCURACY: Ensure the minutes match the current Chicago clock exactly.
-# 2. DO NOT modify or refactor any code inside <PROTECTED> tags.
-# 3. SCRIPT OUTPUT:
-#    - When printing the script only print snippets unless asked for entire script.
+# AI INSTRUCTIONS v2026.06.24__06.54.45 : 
+#
+# 1. MESSAGE STAMP: 
+#    - Every response containing code MUST begin with a standalone version stamp.
+#    - Use CHICAGO TIME (Central Time), 24-hour clock.
+#    - Format: YYYY.MM.DD__HH.MM.SS.
+#    - CRITICAL: Use the time provided in the prompt or at https://www.timeanddate.com/worldclock/usa/chicago. Ensure minutes are exact.
+#
+# 2. VERSION SNIPPET PROHIBITION:
+#    - DO NOT provide code snippets, anchors, or steps to update the script's internal VERSION comment or $scriptVersion variable. 
+#    - The user handles internal file versioning manually based on the Message Stamp.
+#
+# 3. SCRIPT OUTPUT (SURGICAL FIXES ONLY):
+#    - Provide minimal, highly targeted, surgical edits. Do not rewrite large blocks or entire functions.
 #    - Always use a codebox with a copy button.
-# 4. VERBATIM ANCHOR PROTOCOL:
-#    - To facilitate "Find" in Notepad++, always provide "Verbatim Anchors."
-#    - "Verbatim Anchors" are the exact lines of existing code immediately BEFORE and AFTER the insertion point.
+#    - Multiple modifications MUST be presented strictly ONE step at a time. Wait for user confirmation before proceeding to the next step. 
+#    - DO NOT modify or refactor any code inside <PROTECTED> tags.
+#
+# 4. VERBATIM ANCHOR PROTOCOL (FOR NOTEPAD++):
+#    - To facilitate "Find" in Notepad++, always structure edits with:
+#      - "Verbatim Anchor (Before)" - The exact lines of existing code immediately before the change.
+#      - "Verbatim Anchor (After)" - The exact lines of existing code immediately after the change.
+#      - "Snippet to REPLACE" - The exact code block to be deleted.
+#      - "What to PASTE in its place" - The new code block to be inserted.
 #    - Do not summarize, truncate, or refactor the existing code used as an anchor.
-#    - Copy the existing spaces, comments, and symbols exactly as they appear in the file.
+#    - Match spaces, comments, and symbols exactly as they appear in the file.
+#
+# 5. CONTENT PRESERVATION:
+#    - Do not remove, modify, or strip out telemetry data or DevDebug information from any provided code.
 # ==============================================================================
 # </PROTECTED>
 
@@ -54,8 +68,13 @@ param (
     
 )
 
+if ($PSVersionTable.PSVersion -lt [version]"7.6.0") {
+    Write-Host "ERROR: Running on version $($PSVersionTable.PSVersion). This script requires at least 7.6.0." -ForegroundColor DarkRed
+    Read-Host "Press Enter to exit"; exit
+}
+
 # --- GLOBAL VERSION DEFINITION ---
-$scriptVersion = "2026.05.23_10.20.15"
+$scriptVersion = "2026.06.27__12.59.46"
 
 # --- VERSION REPORTER ---
 if ($Version) {
@@ -92,6 +111,9 @@ if ($Manual -or $Help) {
     "  • Configuration Settings are serialized to 'HashSync_configuration.json'.",
     "  • Passing parameters dynamically updates this profile automatically.",
     "  • Folder state tracking caches execution targets to ease sequential runs.`n" | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    
+    Write-Host " DEPENDENCIES:" -ForegroundColor DarkYellow
+    "  • PowerShell: Built with PowerShell 7.6.x." | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
     
     Write-Host "`n USAGE syntax:" -ForegroundColor DarkYellow
     Write-Host "  .\HashSync.ps1 -SetNASRootPath '\\NAS\Anime' -BackUpPath 'F:\Anime'" -ForegroundColor DarkGreen
