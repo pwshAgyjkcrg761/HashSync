@@ -51,3 +51,8 @@ The script operates with a dual-stage execution model—combining configuration 
 
 ## Disclaimer
 *This script automates file system directory checks and targeted file transfers. While designed for strict structural verification, always ensure you maintain separate cold storage backups of your primary volumes. The author is not responsible for any accidental data loss, incorrect configurations, or path mismatches resulting from runtime application execution.*
+
+---
+> **Document Control**<br>
+> *This document is up-to-date with the following version of HashSync.*<br>
+> *2026.07.02__14.27.13*
